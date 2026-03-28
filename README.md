@@ -20,7 +20,7 @@ bookmarks → GraphQL API → AI enrichment → Obsidian Markdown
 ### 1. Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/birdseed.git
+git clone https://github.com/kirozeng/birdseed.git
 cd birdseed
 
 # Required for login only
@@ -212,15 +212,41 @@ A: No. AI features (summary, tags, translation) are optional enhancements.
 
 | | birdseed | Readwise | x2o |
 |---|---|---|---|
-| Price | Free | $8/month | Free |
+| Price | Free | ~$8/month | Free |
 | Privacy | Fully local | Cloud service | Fully local |
 | X Articles | ✅ Full text | ❌ | ❌ |
-| AI enrichment | ✅ Summary + tags + translation | Limited | ✅ Classification |
+| AI enrichment | ✅ Summary + tags + translation | Basic | ✅ Classification |
 | Incremental sync | ✅ | ✅ | ❌ (full export) |
 | External articles | ✅ (trafilatura) | ✅ | ❌ |
 | Local images | ✅ | ❌ | ❌ |
-| Engagement metrics | ✅ | ❌ | ✅ |
+| Engagement metrics | ✅ | ✅ | ✅ |
 | Multi-platform reading | ❌ | ✅ (web, mobile, Kindle) | ❌ |
+| Beyond X bookmarks | ❌ | ✅ (Kindle, RSS, PDF, etc.) | ❌ |
+
+## 中文说明
+
+birdseed 是一个将 X（Twitter）收藏夹同步到 Obsidian 的本地工具。
+
+**特点：**
+- 使用 X 内部 GraphQL API，不依赖浏览器自动化
+- 支持 X Article 长文（完整提取纯文本和标题）
+- AI 自动生成摘要、分类标签、英译中翻译（Gemini / Claude）
+- 增量同步，只处理新收藏
+- 图片本地下载
+- 数据完全本地，不上传任何第三方服务
+
+**快速开始：**
+```bash
+git clone https://github.com/kirozeng/birdseed.git
+cd birdseed
+pip install playwright && python -m playwright install chromium
+python3 login.py     # 打开浏览器登录 X
+python3 sync.py      # 同步收藏夹
+```
+
+详细说明见上方英文文档。
+
+---
 
 ## License
 

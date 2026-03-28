@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """birdseed — Sync X (Twitter) bookmarks to Obsidian via GraphQL API.
 
-https://github.com/YOUR_USERNAME/birdseed
+https://github.com/kirozeng/birdseed
 
 Data flow:
   1. Fetch bookmarks via X's internal GraphQL API (cookie auth)
@@ -70,7 +70,6 @@ STORAGE_STATE_PATH = DATA_DIR / "storage_state.json"
 FALLBACK_OUTPUT_DIR = str(Path.home() / "birdseed-output")
 MEDIA_DIR_NAME = "media"
 
-STATUS_RE = re.compile(r"/status/(\d+)")
 NON_WORD_RE = re.compile(r"[^\w\-\u4e00-\u9fff]+", re.UNICODE)
 
 REPLY_PATTERNS = [
@@ -1271,7 +1270,7 @@ def generate_moc(output_dir: Path):
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="X Bookmarks -> Obsidian sync v3")
+    parser = argparse.ArgumentParser(description="birdseed — Sync X bookmarks to Obsidian")
     parser.add_argument("--output-dir", default=None)
     parser.add_argument(
         "--limit", type=int, default=200,
