@@ -125,20 +125,19 @@ birdseed works perfectly fine without AI — you just won't get summaries, smart
 
 ## All Options
 
-```
+```bash
 python3 sync.py --help
-
-Options:
-  --output-dir PATH     Output directory (default: ~/birdseed-output)
-  --limit N             Max bookmarks to fetch (default: 200)
-  --fetch-articles      Extract external article text (default: on)
-  --no-fetch-articles   Skip external article extraction
-  --download-media      Download images locally (default: on)
-  --no-download-media   Skip image download
-  --rewrite-visible     Rewrite notes even if already synced
-  -v, --verbose         Debug logging
-  -q, --quiet           Warnings only
 ```
+
+| Flag | Description |
+|------|-------------|
+| `--output-dir PATH` | Output directory (default: `~/birdseed-output`) |
+| `--limit N` | Max bookmarks to fetch (default: 200) |
+| `--fetch-articles` / `--no-fetch-articles` | Extract external article text (default: on) |
+| `--download-media` / `--no-download-media` | Download images locally (default: on) |
+| `--rewrite-visible` | Rewrite notes even if already synced |
+| `-v`, `--verbose` | Debug logging |
+| `-q`, `--quiet` | Warnings only |
 
 ## How It Works
 
@@ -207,6 +206,9 @@ A: Yes. The output is standard Markdown files. Works with any Markdown editor or
 
 **Q: Do I need an AI API key?**
 A: No. AI features (summary, tags, translation) are optional enhancements.
+
+**Q: The AI summary and tags are in Chinese. Can I change the language?**
+A: Currently the AI prompts are hardcoded for Chinese output. To change: edit the prompt strings in `generate_summary_and_tags()` and `translate_to_chinese()` in `sync.py`. PRs for multi-language support are welcome.
 
 
 ## 中文说明

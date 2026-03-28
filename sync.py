@@ -44,7 +44,7 @@ except ImportError:
 # Logging
 # ---------------------------------------------------------------------------
 
-log = logging.getLogger("x-sync")
+log = logging.getLogger("birdseed")
 
 
 def setup_logging(verbose: bool = False, quiet: bool = False):
@@ -1271,7 +1271,7 @@ def generate_moc(output_dir: Path):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="birdseed — Sync X bookmarks to Obsidian")
-    parser.add_argument("--output-dir", default=None)
+    parser.add_argument("--output-dir", default=None, help="Output directory (default: ~/birdseed-output)")
     parser.add_argument(
         "--limit", type=int, default=200,
         help="Max bookmarks to fetch (default: 200)"
