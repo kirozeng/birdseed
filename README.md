@@ -10,7 +10,7 @@ bookmarks → GraphQL API → AI enrichment → Obsidian Markdown
 
 - **No browser automation** — Uses X's internal GraphQL API, not Playwright/Selenium scraping
 - **X Articles supported** — Full plain text for long-form posts (not just a t.co link)
-- **AI enrichment** — Auto-summary, topic tags, English→Chinese translation (Gemini or Claude)
+- **AI enrichment** — Auto-summary, topic tags, and optional translation (Gemini or Claude)
 - **Incremental** — Only syncs new bookmarks, tracks what's been processed
 - **Local & private** — Your data stays on your machine, no third-party services
 - **Zero config to start** — Just log in and run
@@ -119,7 +119,7 @@ export ANTHROPIC_API_KEY="your-key"
 |---------|-----------|---------|
 | Summary | ❌ | ✅ 3-5 sentence summary |
 | Tags | `[x-bookmark]` only | ✅ Auto-classified (AI, Design, etc.) |
-| Translation | ❌ | ✅ English → Chinese |
+| Translation | ❌ | ✅ English → Chinese (configurable) |
 
 birdseed works perfectly fine without AI — you just won't get summaries, smart tags, or translations.
 
@@ -148,7 +148,7 @@ python3 sync.py --help
 4. Resolve t.co short URLs
 5. Extract external article text (trafilatura, optional)
 6. AI: generate summary + tags in one call
-7. AI: translate English content to Chinese
+7. AI: translate content (English→Chinese by default, configurable)
 8. Write Markdown notes + download images
 9. Generate MOC index
 10. Update state.json (incremental tracking)
