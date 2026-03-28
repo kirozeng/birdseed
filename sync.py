@@ -510,10 +510,16 @@ def enrich_x_articles(items: List[Dict], cookie_str: str) -> None:
     """For items that link to X Articles, fetch the full article content."""
     for item in items:
         full_text = item.get("fullText", "")
-        # Detect X Article links
-        if X_ARTICLE_RE.search(full_text) or (
-            len(full_text.strip()) < 50 and "t.co" in full_text
-        ):
+        # Detect X Article links or very short tweets that are likely article shares
+        # (X Articles show as just a t.co link pointing to x.com/i/article/...)
+        is_likely_article = X_ARTICLE_RE.search(full_text)
+        is_tco_only = (
+            not is_likely_article
+            and len(full_text.strip()) < 30
+            and full_text.strip().startswith("https://t.co/")
+            and full_text.strip().count(" ") == 0
+        )
+        if is_likely_article or is_tco_only:
             log.info("Fetching X Article for tweet %s...", item["tweetId"])
             article = fetch_x_article(cookie_str, item["tweetId"])
             if article:
@@ -896,11 +902,17 @@ def _call_claude(prompt: str, api_key: str, timeout: int = 90) -> str:
     return ""
 
 
+_ai_no_key_warned = False
+
+
 def _call_ai(prompt: str, timeout: int = 90) -> str:
     """Call AI with auto-detected provider."""
+    global _ai_no_key_warned
     provider, key = _get_ai_key()
     if provider == "none":
-        log.warning("No AI API key found — skipping AI enrichment")
+        if not _ai_no_key_warned:
+            log.warning("No AI API key found — skipping AI enrichment")
+            _ai_no_key_warned = True
         return ""
     if provider == "gemini":
         return _call_gemini(prompt, key, timeout)
@@ -1139,7 +1151,8 @@ def build_note_content(
 # ---------------------------------------------------------------------------
 
 def write_note_files(
-    items: List[Dict], output_dir: Path, synced_at: str
+    items: List[Dict], output_dir: Path, synced_at: str,
+    download_media: bool = True,
 ) -> List[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     media_dir = output_dir / MEDIA_DIR_NAME
@@ -1178,18 +1191,19 @@ def write_note_files(
             path = output_dir / f"{date_str}-{title_part}-{counter}.md"
             counter += 1
 
-        # Download media via HTTP (no Playwright needed)
+        # Download media via HTTP
         local_media_paths: List[str] = []
-        for media in item.get("media", []):
-            img_url = media.get("url", "")
-            if not img_url:
-                continue
-            try:
-                lp = download_image_http(img_url, media_dir)
-                if lp:
-                    local_media_paths.append(f"{MEDIA_DIR_NAME}/{lp.name}")
-            except Exception as e:
-                log.warning("Image failed %s: %s", img_url[:60], e)
+        if download_media:
+            for media in item.get("media", []):
+                img_url = media.get("url", "")
+                if not img_url:
+                    continue
+                try:
+                    lp = download_image_http(img_url, media_dir)
+                    if lp:
+                        local_media_paths.append(f"{MEDIA_DIR_NAME}/{lp.name}")
+                except Exception as e:
+                    log.warning("Image failed %s: %s", img_url[:60], e)
 
         path.write_text(
             build_note_content(item, synced_at, local_media_paths), encoding="utf-8"
@@ -1370,7 +1384,7 @@ def main() -> int:
 
     # --- Step 8: Write notes ---
     now_iso = datetime.now().astimezone().isoformat()
-    written = write_note_files(new_items, output_dir, now_iso)
+    written = write_note_files(new_items, output_dir, now_iso, download_media=args.download_media)
 
     # --- Step 9: Generate MOC ---
     generate_moc(output_dir)
