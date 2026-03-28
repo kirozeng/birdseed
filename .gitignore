@@ -1,0 +1,24 @@
+# Login cookies (sensitive!)
+data/storage_state.json
+data/chrome-profile/
+
+# Sync state (personal data)
+data/state.json
+
+# User config
+data/config.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

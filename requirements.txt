@@ -1,0 +1,8 @@
+# Required for login only
+playwright>=1.40
+
+# Optional: external article extraction
+trafilatura>=1.6
+
+# Optional: article extraction fallback
+lxml_html_clean>=0.1
