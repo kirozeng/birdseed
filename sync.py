@@ -638,7 +638,7 @@ def get_output_dir(cli_override: Optional[str] = None) -> Path:
 
 def load_state() -> dict:
     if not STATE_PATH.exists():
-        return {"version": 2, "lastRun": None, "seen": {}}
+        return {"version": 1, "lastRun": None, "seen": {}}
     return json.loads(STATE_PATH.read_text(encoding="utf-8"))
 
 
@@ -1381,7 +1381,7 @@ def main() -> int:
             "notePath": item.get("notePath"),
         }
     state["lastRun"] = now_iso
-    state["version"] = 2
+    state["version"] = 1
     save_state(state)
 
     log.info(
