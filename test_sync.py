@@ -14,6 +14,7 @@ from sync import (
     slugify,
     parse_twitter_date,
     normalize_text,
+    set_language,
 )
 
 
@@ -76,15 +77,22 @@ def test_is_primarily_english():
 
 
 def test_clean_title():
+    # English mode (default)
+    set_language("en")
     assert clean_title("Replying to @user: Actual Title Here") == "Actual Title Here"
     assert clean_title("回复 @user: 实际标题内容") == "实际标题内容"
     assert clean_title("") == "Untitled Bookmark"
-    # URL-only text
     assert clean_title("https://t.co/abc123") == "Untitled Bookmark"
-    # Short text
     assert clean_title("hi") == "Untitled Bookmark"
-    # Normal title
     assert "Claude" in clean_title("Claude + Obsidian 最猛方案")
+
+    # Chinese mode
+    set_language("zh")
+    assert clean_title("") == "未命名收藏"
+    assert clean_title("hi") == "未命名收藏"
+
+    # Reset to default
+    set_language("en")
     print("✓ Title cleaning tests passed")
 
 

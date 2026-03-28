@@ -147,6 +147,7 @@ python3 sync.py --help
 |------|-------------|
 | `--cookie STRING` | X cookie string (alternative to login.py) |
 | `--output-dir PATH` | Output directory (default: `~/birdseed-output`) |
+| `--language en\|zh` | Output language for AI & labels (default: `en`) |
 | `--limit N` | Max bookmarks to fetch (default: 200) |
 | `--fetch-articles` / `--no-fetch-articles` | Extract external article text (default: on) |
 | `--download-media` / `--no-download-media` | Download images locally (default: on) |
@@ -154,6 +155,13 @@ python3 sync.py --help
 | `--update-existing` | Add missing summary/tags/translation to existing notes |
 | `-v`, `--verbose` | Debug logging |
 | `-q`, `--quiet` | Warnings only |
+
+You can also set language permanently in `data/config.json`:
+```json
+{
+  "language": "zh"
+}
+```
 
 ## How It Works
 
@@ -223,8 +231,8 @@ A: Yes. The output is standard Markdown files. Works with any Markdown editor or
 **Q: Do I need an AI API key?**
 A: No. AI features (summary, tags, translation) are optional enhancements.
 
-**Q: Can I change the AI output language?**
-A: Summary and tags are generated in English by default. The translation feature translates English→Chinese. To change target language: edit the prompt strings in `translate_to_chinese()` and `generate_summary_and_tags()` in `sync.py`. PRs for multi-language support are welcome.
+**Q: Can I change the output language?**
+A: Yes! Use `--language zh` for Chinese output (summary, tags, labels all in Chinese), or `--language en` for English (default). Set it permanently in `data/config.json` with `{"language": "zh"}`.
 
 
 ## 中文说明

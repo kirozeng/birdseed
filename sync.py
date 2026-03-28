@@ -70,6 +70,108 @@ STORAGE_STATE_PATH = DATA_DIR / "storage_state.json"
 FALLBACK_OUTPUT_DIR = str(Path.home() / "birdseed-output")
 MEDIA_DIR_NAME = "media"
 
+# ---------------------------------------------------------------------------
+# i18n — labels and AI prompts by language
+# ---------------------------------------------------------------------------
+
+I18N = {
+    "en": {
+        "summary_label": "Summary",
+        "referenced_article": "Referenced Article",
+        "quoted_prefix": "Quoted",
+        "quoted_tweet": "Quoted tweet",
+        "translation_label": "Chinese Translation",
+        "video_label": "Video",
+        "watch_on_x": "Watch on X",
+        "truncated": "...truncated",
+        "untitled": "Untitled Bookmark",
+        "moc_bookmarks": "bookmarks",
+        "moc_updated": "updated",
+        "summary_prompt": (
+            "Write a concise 3-5 sentence summary of the following content. "
+            "Output the summary only, no prefix or label.\n\n"
+        ),
+        "tags_prompt": (
+            "Based on the following content, pick 1-3 of the most relevant tags from: {cats}\n"
+            "Output tags only, comma-separated, no # prefix. "
+            "You may create a new short tag if none fit.\n\n"
+        ),
+        "combined_prompt": (
+            "Based on the following content, do two tasks:\n\n"
+            "Task 1 — Summary: Write a concise 3-5 sentence summary.\n"
+            "Task 2 — Tags: Pick 1-3 relevant tags from: {cats} "
+            "(create a new short tag if none fit)\n\n"
+            "Output in exactly this format, nothing else:\n"
+            "Summary: <your summary>\n"
+            "Tags: <tag1>, <tag2>, <tag3>\n\n"
+        ),
+        "combined_summary_key": "summary:",
+        "combined_tags_key": "tags:",
+        "translate_prompt": (
+            "Translate the following English content into natural, fluent Simplified "
+            "Chinese. Keep formatting, section structure, command lines, and links "
+            "intact. Output translation only, no explanation.\n\n"
+        ),
+        "tag_categories": [
+            "AI", "LLM", "Design", "Frontend", "Backend", "Fullstack", "DevOps", "Mobile",
+            "Gamedev", "Data Science", "Blockchain", "Product", "Startup", "Productivity",
+            "Open Source", "Tutorial", "Opinion", "News", "Lifestyle",
+        ],
+    },
+    "zh": {
+        "summary_label": "摘要",
+        "referenced_article": "引用文章",
+        "quoted_prefix": "引用",
+        "quoted_tweet": "引用推文",
+        "translation_label": "中文翻译",
+        "video_label": "视频",
+        "watch_on_x": "在 X 上观看",
+        "truncated": "...内容已截断",
+        "untitled": "未命名收藏",
+        "moc_bookmarks": "条收藏",
+        "moc_updated": "更新于",
+        "summary_prompt": (
+            "用中文写一段 3-5 句话的摘要概括以下内容的核心观点。直接输出摘要，不要任何前缀。\n\n"
+        ),
+        "tags_prompt": (
+            "根据以下内容，从这些类别中选择 1-3 个最相关的标签：{cats}\n"
+            "只输出标签，用英文逗号分隔，不要加 # 号。如果都不合适可以创建新标签。\n\n"
+        ),
+        "combined_prompt": (
+            "根据以下内容，完成两个任务：\n\n"
+            "任务1 - 摘要：用中文写 3-5 句话概括核心观点。\n"
+            "任务2 - 标签：从这些类别中选 1-3 个最相关的：{cats}（如果都不合适可以创建新标签）\n\n"
+            "严格按以下格式输出，不要加其他内容：\n"
+            "摘要：<你的摘要>\n"
+            "标签：<标签1>, <标签2>, <标签3>\n\n"
+        ),
+        "combined_summary_key": "摘要",
+        "combined_tags_key": "标签",
+        "translate_prompt": (
+            "Translate the following English content into natural, fluent Simplified "
+            "Chinese. Keep formatting, section structure, command lines, and links "
+            "intact. Output translation only, no explanation.\n\n"
+        ),
+        "tag_categories": [
+            "AI", "LLM", "设计", "前端", "后端", "全栈", "DevOps", "移动开发",
+            "游戏开发", "数据科学", "区块链", "产品", "创业", "效率工具",
+            "开源", "教程", "观点", "新闻", "生活",
+        ],
+    },
+}
+
+# Active language — set by --language flag or config
+_lang: Dict[str, Any] = I18N["en"]
+
+
+def set_language(lang_code: str) -> None:
+    global _lang
+    if lang_code not in I18N:
+        log.warning("Unknown language '%s', falling back to 'en'", lang_code)
+        lang_code = "en"
+    _lang = I18N[lang_code]
+    log.info("Language: %s", lang_code)
+
 NON_WORD_RE = re.compile(r"[^\w\-\u4e00-\u9fff]+", re.UNICODE)
 
 REPLY_PATTERNS = [
@@ -84,11 +186,7 @@ SHORT_URL_DOMAINS = {
     "goo.gl", "is.gd", "buff.ly", "lnkd.in",
 }
 
-TAG_CATEGORIES = [
-    "AI", "LLM", "Design", "Frontend", "Backend", "Fullstack", "DevOps", "Mobile",
-    "Gamedev", "Data Science", "Blockchain", "Product", "Startup", "Productivity",
-    "Open Source", "Tutorial", "Opinion", "News", "Lifestyle",
-]
+# TAG_CATEGORIES moved to I18N dict (per-language)
 
 # --- GraphQL API constants (from X web client) ---
 BEARER_TOKEN = (
@@ -687,7 +785,7 @@ def normalize_text(value: str) -> str:
 def clean_title(text: str, limit: int = 50) -> str:
     """Extract a readable title from tweet text."""
     if not text:
-        return "Untitled Bookmark"
+        return _lang["untitled"]
     # Remove URLs
     cleaned = re.sub(r"https?://\S+", "", text).strip()
     # Remove @mentions at the start
@@ -702,8 +800,8 @@ def clean_title(text: str, limit: int = 50) -> str:
         if line and len(line) > 5:
             # Clean and truncate
             title = re.sub(r"\s+", " ", line).strip(" -—_·")
-            return title[:limit] if title else "Untitled Bookmark"
-    return "Untitled Bookmark"
+            return title[:limit] if title else _lang["untitled"]
+    return _lang["untitled"]
 
 
 def slugify(text: str, limit: int = 60) -> str:
@@ -795,7 +893,7 @@ def _fetch_article_trafilatura(url: str) -> str:
         text = normalize_text(extracted)
         # Truncate overly long articles
         if len(text) > 5000:
-            text = text[:5000] + "\n\n[...truncated]"
+            text = text[:5000] + f"\n\n[{_lang['truncated']}]"
         return text
     return ""
 
@@ -942,12 +1040,7 @@ def _call_ai(prompt: str, timeout: int = 90) -> str:
 
 
 def translate_to_chinese(text: str) -> str:
-    result = _call_ai(
-        "Translate the following English content into natural, fluent Simplified "
-        "Chinese. Keep formatting, section structure, command lines, and links "
-        "intact. Output translation only, no explanation.\n\n"
-        + text[:15000]
-    )
+    result = _call_ai(_lang["translate_prompt"] + text[:15000])
     if result:
         log.info("Translation: OK (%d chars)", len(result))
     return result
@@ -956,24 +1049,15 @@ def translate_to_chinese(text: str) -> str:
 def generate_summary(text: str) -> str:
     if len(text) < 300:
         return ""
-    result = _call_ai(
-        "Write a concise 3-5 sentence summary of the following content. "
-        "Output the summary only, no prefix or label.\n\n"
-        + text[:15000]
-    )
+    result = _call_ai(_lang["summary_prompt"] + text[:15000])
     if result:
         log.info("Summary: OK (%d chars)", len(result))
     return result
 
 
 def generate_tags(text: str) -> List[str]:
-    cats = ", ".join(TAG_CATEGORIES)
-    raw = _call_ai(
-        f"Based on the following content, pick 1-3 of the most relevant tags from: {cats}\n"
-        "Output tags only, comma-separated, no # prefix. "
-        "You may create a new short tag if none fit.\n\n"
-        + text[:3000]
-    )
+    cats = ", ".join(_lang["tag_categories"])
+    raw = _call_ai(_lang["tags_prompt"].format(cats=cats) + text[:3000])
     if not raw:
         return []
     tags = [t.strip().strip("#") for t in re.split(r"[,，、\n]", raw) if t.strip()]
@@ -984,39 +1068,31 @@ def generate_tags(text: str) -> List[str]:
 def generate_summary_and_tags(text: str) -> Tuple[str, List[str]]:
     """Generate summary + tags in a single AI call. Falls back to separate calls on parse failure."""
     if len(text) < 300:
-        # Too short for summary, just get tags
         return "", generate_tags(text) if len(text) > 50 else []
 
-    cats = ", ".join(TAG_CATEGORIES)
-    raw = _call_ai(
-        "Based on the following content, do two tasks:\n\n"
-        "Task 1 — Summary: Write a concise 3-5 sentence summary.\n"
-        f"Task 2 — Tags: Pick 1-3 relevant tags from: {cats} "
-        "(create a new short tag if none fit)\n\n"
-        "Output in exactly this format, nothing else:\n"
-        "Summary: <your summary>\n"
-        "Tags: <tag1>, <tag2>, <tag3>\n\n"
-        + text[:15000]
-    )
+    cats = ", ".join(_lang["tag_categories"])
+    raw = _call_ai(_lang["combined_prompt"].format(cats=cats) + text[:15000])
     if not raw:
         return "", []
 
     summary = ""
     tags: List[str] = []
+    summary_key = _lang["combined_summary_key"]
+    tags_key = _lang["combined_tags_key"]
 
     for line in raw.strip().split("\n"):
         line = line.strip()
-        if line.lower().startswith("summary:"):
-            summary = line.split(":", 1)[-1].strip()
-        elif line.lower().startswith("tags:"):
-            tag_str = line.split(":", 1)[-1].strip()
+        lower = line.lower()
+        if lower.startswith(summary_key + ":") or lower.startswith(summary_key + "："):
+            summary = re.split(r"[:：]", line, maxsplit=1)[-1].strip()
+        elif lower.startswith(tags_key + ":") or lower.startswith(tags_key + "："):
+            tag_str = re.split(r"[:：]", line, maxsplit=1)[-1].strip()
             tags = [t.strip().strip("#") for t in re.split(r"[,，、]", tag_str) if t.strip()][:3]
 
     if summary and tags:
         log.info("Summary+Tags: OK (%d chars, %s)", len(summary), tags)
         return summary, tags
 
-    # Parse failed, fall back to separate calls
     log.debug("Combined parse failed, falling back to separate calls")
     if not summary:
         summary = generate_summary(text)
@@ -1095,7 +1171,7 @@ def build_note_content(
 
     # --- Summary ---
     if summary:
-        lines.extend([f"> **Summary:** {summary.replace(chr(10), ' ')}", ""])
+        lines.extend([f"> **{_lang['summary_label']}:** {summary.replace(chr(10), ' ')}", ""])
 
     # --- Body ---
     if article_text and is_link_tweet:
@@ -1107,7 +1183,7 @@ def build_note_content(
         lines.append(article_text)
     elif article_text:
         lines.append(full_text or "")
-        lines.extend(["", "---", "", "**Referenced Article:**", "", article_text])
+        lines.extend(["", "---", "", f"**{_lang['referenced_article']}:**", "", article_text])
     else:
         lines.append(full_text or "")
 
@@ -1118,9 +1194,9 @@ def build_note_content(
         qt_author = quoted_tweet.get("authorHandle") or ""
         lines.extend(["", "---", ""])
         if qt_author:
-            lines.append(f"**Quoted @{qt_author}:**")
+            lines.append(f"**{_lang['quoted_prefix']} @{qt_author}:**")
         else:
-            lines.append("**Quoted tweet:**")
+            lines.append(f"**{_lang['quoted_tweet']}:**")
         lines.append("")
         if qt_url:
             lines.append(f"> [{qt_url}]({qt_url})")
@@ -1132,12 +1208,12 @@ def build_note_content(
     if is_primarily_english(text_for_tl):
         tl = translate_to_chinese(text_for_tl)
         if tl:
-            lines.extend(["", "---", "", "**Chinese Translation:**", "", tl])
+            lines.extend(["", "---", "", f"**{_lang['translation_label']}:**", "", tl])
 
     # --- Video ---
     if video_urls:
-        lines.extend(["", "---", "", "**Video:**"])
-        lines.append(f"- [Watch on X]({tweet_url})")
+        lines.extend(["", "---", "", f"**{_lang['video_label']}:**"])
+        lines.append(f"- [{_lang['watch_on_x']}]({tweet_url})")
         for vu in video_urls:
             if vu != tweet_url and not vu.startswith("blob:"):
                 lines.append(f"- {vu}")
@@ -1270,7 +1346,7 @@ def generate_moc(output_dir: Path):
 
         date = fm.get("date", note_path.name[:10])
         month = date[:7]
-        title = note_path.stem[11:].replace("-", " ").strip() or "Untitled"
+        title = note_path.stem[11:].replace("-", " ").strip() or _lang["untitled"]
         author = fm.get("author_name", fm.get("author", ""))
 
         by_month.setdefault(month, []).append({
@@ -1284,7 +1360,7 @@ def generate_moc(output_dir: Path):
     lines = [
         "# X Bookmarks Index",
         "",
-        f"> {total} bookmarks | updated {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"> {total} {_lang['moc_bookmarks']} | {_lang['moc_updated']} {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         "",
     ]
 
@@ -1333,8 +1409,12 @@ def _update_existing_notes(output_dir: Path) -> int:
         if not content.startswith("---"):
             continue
 
-        has_summary = "> **Summary:**" in content
-        has_translation = "**Chinese Translation:**" in content
+        has_summary = (f"> **{_lang['summary_label']}:**" in content
+                       or "> **Summary:**" in content
+                       or "> **摘要：**" in content)
+        has_translation = (f"**{_lang['translation_label']}:**" in content
+                          or "**Chinese Translation:**" in content
+                          or "**中文翻译：**" in content)
 
         # Extract body text (after frontmatter) for AI input
         try:
@@ -1345,9 +1425,9 @@ def _update_existing_notes(output_dir: Path) -> int:
 
         # Strip existing sections to get raw text
         raw_text = body
-        for marker in ["---", "> **Summary:**", "**Referenced Article:**",
-                        "**Quoted", "**Chinese Translation:**",
-                        "**Video:**", "**Links:**", "![[media/"]:
+        for marker in ["---", "> **", "**Referenced", "**引用",
+                        "**Quoted", "**Chinese Translation", "**中文翻译",
+                        "**Video", "**视频", "**Links:", "![[media/"]:
             idx = raw_text.find(marker)
             if idx > 0 and marker in ("---",):
                 # Keep text before first ---
@@ -1373,13 +1453,13 @@ def _update_existing_notes(output_dir: Path) -> int:
         if needs_summary:
             summary, tags = generate_summary_and_tags(raw_text)
             if summary:
-                additions.append(f"> **Summary:** {summary.replace(chr(10), ' ')}\n")
+                additions.append(f"> **{_lang['summary_label']}:** {summary.replace(chr(10), ' ')}\n")
                 log.info("  Added summary (%d chars)", len(summary))
 
         if needs_translation:
             tl = translate_to_chinese(raw_text)
             if tl:
-                additions.append(f"\n---\n\n**Chinese Translation:**\n\n{tl}\n")
+                additions.append(f"\n---\n\n**{_lang['translation_label']}:**\n\n{tl}\n")
                 log.info("  Added translation (%d chars)", len(tl))
 
         if additions:
@@ -1425,6 +1505,8 @@ def main() -> int:
     parser.add_argument("--cookie", default=None,
                         help="X cookie string (must contain ct0). Alternative to login.py")
     parser.add_argument("--output-dir", default=None, help="Output directory (default: ~/birdseed-output)")
+    parser.add_argument("--language", default=None, choices=["en", "zh"],
+                        help="Output language for AI summary/tags/labels (default: en)")
     parser.add_argument(
         "--limit", type=int, default=200,
         help="Max bookmarks to fetch (default: 200)"
@@ -1451,6 +1533,10 @@ def main() -> int:
 
     setup_logging(verbose=args.verbose, quiet=args.quiet)
     output_dir = get_output_dir(args.output_dir)
+
+    # Set language (CLI > config.json > default "en")
+    lang = args.language or load_config().get("language", "en")
+    set_language(lang)
 
     # Check API key availability
     ai_provider, _ = _get_ai_key()
