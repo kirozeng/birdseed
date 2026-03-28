@@ -308,11 +308,12 @@ def load_cookie_string(cli_cookie: Optional[str] = None) -> str:
 
 
 def get_csrf_token(cookie_str: str) -> str:
-    """Extract ct0 from cookie string."""
+    """Extract ct0 from cookie string (URL-decoded)."""
     m = re.search(r"ct0=([^;]+)", cookie_str)
     if not m:
         raise SystemExit("ct0 not found in cookie string")
-    return m.group(1)
+    from urllib.parse import unquote
+    return unquote(m.group(1))
 
 
 # ---------------------------------------------------------------------------
@@ -429,37 +430,37 @@ def _parse_graphql_response(data: Dict) -> Tuple[List[Dict], Optional[str]]:
             if not rest_id:
                 continue
 
-            # User info
-            user_result = (
-                result.get("core", {}).get("user_results", {}).get("result", {})
-            )
-            user_legacy = user_result.get("legacy", {})
+            # User info (guard against None at any level)
+            core = result.get("core") or {}
+            user_results = core.get("user_results") or {}
+            user_result = user_results.get("result") or {}
+            user_legacy = user_result.get("legacy") or {}
             screen_name = user_legacy.get("screen_name", "")
             display_name = user_legacy.get("name", "")
 
             # Tweet text — prefer note_tweet for long-form
-            note_tweet_text = (
-                result.get("note_tweet", {})
-                .get("note_tweet_results", {})
-                .get("result", {})
-                .get("text")
-            )
+            _nt = result.get("note_tweet") or {}
+            _ntr = _nt.get("note_tweet_results") or {}
+            _ntr_result = _ntr.get("result") or {}
+            note_tweet_text = _ntr_result.get("text")
             full_text = note_tweet_text or legacy.get("full_text", "")
 
-            # Media
+            # Media (guard against None intermediate values)
             media_list = []
-            for m in legacy.get("extended_entities", {}).get("media", []):
+            extended = legacy.get("extended_entities") or {}
+            for m in extended.get("media", []):
                 media_type = m.get("type", "photo")
                 if media_type == "video":
                     # Get highest bitrate video URL
-                    variants = m.get("video_info", {}).get("variants", [])
+                    _vinfo = m.get("video_info") or {}
+                    variants = _vinfo.get("variants") or []
                     video_variants = [
                         v for v in variants if v.get("content_type") == "video/mp4"
                     ]
                     video_variants.sort(
                         key=lambda v: v.get("bitrate", 0), reverse=True
                     )
-                    video_url = video_variants[0]["url"] if video_variants else ""
+                    video_url = video_variants[0].get("url", "") if video_variants else ""
                     media_list.append({
                         "type": "video",
                         "url": m.get("media_url_https", ""),
@@ -467,8 +468,9 @@ def _parse_graphql_response(data: Dict) -> Tuple[List[Dict], Optional[str]]:
                         "altText": m.get("ext_alt_text"),
                     })
                 elif media_type == "animated_gif":
-                    variants = m.get("video_info", {}).get("variants", [])
-                    gif_url = variants[0]["url"] if variants else ""
+                    _ginfo = m.get("video_info") or {}
+                    variants = _ginfo.get("variants") or []
+                    gif_url = variants[0].get("url", "") if variants else ""
                     media_list.append({
                         "type": "gif",
                         "url": m.get("media_url_https", ""),
@@ -492,23 +494,20 @@ def _parse_graphql_response(data: Dict) -> Tuple[List[Dict], Optional[str]]:
 
             # Quote tweet
             quoted_tweet = None
-            qt_result = result.get("quoted_status_result", {}).get("result")
+            _qsr = result.get("quoted_status_result") or {}
+            qt_result = _qsr.get("result")
             if qt_result:
                 if qt_result.get("__typename") == "TweetWithVisibilityResults":
-                    qt_result = qt_result.get("tweet", qt_result)
-                qt_legacy = qt_result.get("legacy", {})
-                qt_user = (
-                    qt_result.get("core", {})
-                    .get("user_results", {})
-                    .get("result", {})
-                    .get("legacy", {})
-                )
-                qt_note = (
-                    qt_result.get("note_tweet", {})
-                    .get("note_tweet_results", {})
-                    .get("result", {})
-                    .get("text")
-                )
+                    qt_result = qt_result.get("tweet") or qt_result
+                qt_legacy = qt_result.get("legacy") or {}
+                _qt_core = qt_result.get("core") or {}
+                _qt_ur = _qt_core.get("user_results") or {}
+                _qt_ur_result = _qt_ur.get("result") or {}
+                qt_user = _qt_ur_result.get("legacy") or {}
+                _qt_nt = qt_result.get("note_tweet") or {}
+                _qt_ntr = _qt_nt.get("note_tweet_results") or {}
+                _qt_ntr_result = _qt_ntr.get("result") or {}
+                qt_note = _qt_ntr_result.get("text")
                 qt_text = qt_note or qt_legacy.get("full_text", "")
                 qt_handle = qt_user.get("screen_name", "")
                 qt_id = qt_result.get("rest_id", "")
@@ -1188,6 +1187,8 @@ def build_note_content(
     # --- Frontmatter ---
     def _escape_yaml_value(val: str) -> str:
         """Escape a string for safe use as a double-quoted YAML value."""
+        # Remove control characters that can break YAML parsing
+        val = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", val)
         return val.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ").replace("\r", "")
 
     safe_author_name = _escape_yaml_value(author_name)
