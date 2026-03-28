@@ -151,6 +151,7 @@ def main() -> int:
             browser.close()
 
         if STORAGE_STATE_PATH.exists():
+            STORAGE_STATE_PATH.chmod(0o600)
             try:
                 payload = json.loads(STORAGE_STATE_PATH.read_text(encoding="utf-8"))
                 cookies = len(payload.get("cookies", []))

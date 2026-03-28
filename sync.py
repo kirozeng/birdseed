@@ -31,6 +31,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse, urlencode
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
@@ -69,6 +70,17 @@ STORAGE_STATE_PATH = DATA_DIR / "storage_state.json"
 
 FALLBACK_OUTPUT_DIR = str(Path.home() / "birdseed-output")
 MEDIA_DIR_NAME = "media"
+
+# Thresholds for AI enrichment and text processing
+MIN_CHARS_FOR_SUMMARY = 300
+MIN_CHARS_FOR_UPDATE = 50
+AI_MAX_INPUT_CHARS = 15000
+AI_MAX_TAG_INPUT_CHARS = 3000
+ARTICLE_MAX_CHARS = 5000
+CLEAN_TITLE_LIMIT = 50
+SLUG_LIMIT = 60
+URL_RESOLVE_TIMEOUT = 10
+URL_RESOLVE_MAX_WORKERS = 8
 
 # ---------------------------------------------------------------------------
 # i18n — labels and AI prompts by language
@@ -682,8 +694,14 @@ def resolve_short_url(url: str, max_redirects: int = 5) -> str:
             req = Request(current, method="HEAD")
             req.add_header("User-Agent", "Mozilla/5.0")
             try:
-                opener.open(req, timeout=10)
+                opener.open(req, timeout=URL_RESOLVE_TIMEOUT)
                 break
+            except HTTPError as e:
+                loc = e.headers.get("Location") if e.headers else None
+                if loc:
+                    current = loc
+                else:
+                    break
             except Exception as e:
                 loc = (
                     getattr(e, "headers", {}).get("Location")
@@ -693,14 +711,16 @@ def resolve_short_url(url: str, max_redirects: int = 5) -> str:
                 if loc:
                     current = loc
                 else:
+                    log.debug("resolve_short_url failed for %s: %s", url, e)
                     break
         return current
-    except Exception:
+    except Exception as e:
+        log.debug("resolve_short_url error for %s: %s", url, e)
         return url
 
 
 def resolve_tco_urls_in_items(items: List[Dict]) -> None:
-    """Batch-resolve t.co URLs in all items' fullText."""
+    """Batch-resolve t.co URLs in all items' fullText (concurrently)."""
     url_set: set = set()
     for item in items:
         for m in TCO_RE.finditer(item.get("fullText", "")):
@@ -711,10 +731,20 @@ def resolve_tco_urls_in_items(items: List[Dict]) -> None:
 
     log.info("Resolving %d t.co short URLs...", len(url_set))
     url_map: Dict[str, str] = {}
-    for url in url_set:
-        resolved = resolve_short_url(url)
-        if resolved != url:
-            url_map[url] = resolved
+
+    max_workers = min(URL_RESOLVE_MAX_WORKERS, len(url_set))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_url = {
+            executor.submit(resolve_short_url, url): url for url in url_set
+        }
+        for future in as_completed(future_to_url):
+            original = future_to_url[future]
+            try:
+                resolved = future.result()
+                if resolved != original:
+                    url_map[original] = resolved
+            except Exception as e:
+                log.debug("Failed to resolve %s: %s", original, e)
 
     for item in items:
         text = item.get("fullText", "")
@@ -763,15 +793,21 @@ def get_output_dir(cli_override: Optional[str] = None) -> Path:
 
 
 def load_state() -> dict:
+    default_state = {"version": 1, "lastRun": None, "seen": {}}
     if not STATE_PATH.exists():
-        return {"version": 1, "lastRun": None, "seen": {}}
-    return json.loads(STATE_PATH.read_text(encoding="utf-8"))
+        return default_state
+    try:
+        return json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, ValueError, UnicodeDecodeError) as e:
+        log.warning("state.json is corrupted (%s), resetting to defaults", e)
+        return default_state
 
 
 def save_state(state: dict) -> None:
     STATE_PATH.write_text(
         json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    STATE_PATH.chmod(0o600)
 
 
 # ---------------------------------------------------------------------------
@@ -782,7 +818,7 @@ def normalize_text(value: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", (value or "").strip())
 
 
-def clean_title(text: str, limit: int = 50) -> str:
+def clean_title(text: str, limit: int = CLEAN_TITLE_LIMIT) -> str:
     """Extract a readable title from tweet text."""
     if not text:
         return _lang["untitled"]
@@ -804,7 +840,7 @@ def clean_title(text: str, limit: int = 50) -> str:
     return _lang["untitled"]
 
 
-def slugify(text: str, limit: int = 60) -> str:
+def slugify(text: str, limit: int = SLUG_LIMIT) -> str:
     text = NON_WORD_RE.sub("-", (text or "").strip()).strip("-")
     return text[:limit] or "bookmark"
 
@@ -892,8 +928,8 @@ def _fetch_article_trafilatura(url: str) -> str:
     if extracted and len(extracted.strip()) > 100:
         text = normalize_text(extracted)
         # Truncate overly long articles
-        if len(text) > 5000:
-            text = text[:5000] + f"\n\n[{_lang['truncated']}]"
+        if len(text) > ARTICLE_MAX_CHARS:
+            text = text[:ARTICLE_MAX_CHARS] + f"\n\n[{_lang['truncated']}]"
         return text
     return ""
 
@@ -966,8 +1002,8 @@ def _get_ai_key() -> tuple:
 def _call_gemini(prompt: str, api_key: str, timeout: int = 90) -> str:
     """Call Gemini API."""
     url = (
-        f"https://generativelanguage.googleapis.com/v1beta/"
-        f"models/gemini-2.0-flash:generateContent?key={api_key}"
+        "https://generativelanguage.googleapis.com/v1beta/"
+        "models/gemini-2.0-flash:generateContent"
     )
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -977,7 +1013,10 @@ def _call_gemini(prompt: str, api_key: str, timeout: int = 90) -> str:
         req = Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": api_key,
+            },
             method="POST",
         )
         with urlopen(req, timeout=timeout) as resp:
@@ -1040,16 +1079,16 @@ def _call_ai(prompt: str, timeout: int = 90) -> str:
 
 
 def translate_to_chinese(text: str) -> str:
-    result = _call_ai(_lang["translate_prompt"] + text[:15000])
+    result = _call_ai(_lang["translate_prompt"] + text[:AI_MAX_INPUT_CHARS])
     if result:
         log.info("Translation: OK (%d chars)", len(result))
     return result
 
 
 def generate_summary(text: str) -> str:
-    if len(text) < 300:
+    if len(text) < MIN_CHARS_FOR_SUMMARY:
         return ""
-    result = _call_ai(_lang["summary_prompt"] + text[:15000])
+    result = _call_ai(_lang["summary_prompt"] + text[:AI_MAX_INPUT_CHARS])
     if result:
         log.info("Summary: OK (%d chars)", len(result))
     return result
@@ -1057,7 +1096,7 @@ def generate_summary(text: str) -> str:
 
 def generate_tags(text: str) -> List[str]:
     cats = ", ".join(_lang["tag_categories"])
-    raw = _call_ai(_lang["tags_prompt"].format(cats=cats) + text[:3000])
+    raw = _call_ai(_lang["tags_prompt"].format(cats=cats) + text[:AI_MAX_TAG_INPUT_CHARS])
     if not raw:
         return []
     tags = [t.strip().strip("#") for t in re.split(r"[,，、\n]", raw) if t.strip()]
@@ -1067,11 +1106,11 @@ def generate_tags(text: str) -> List[str]:
 
 def generate_summary_and_tags(text: str) -> Tuple[str, List[str]]:
     """Generate summary + tags in a single AI call. Falls back to separate calls on parse failure."""
-    if len(text) < 300:
-        return "", generate_tags(text) if len(text) > 50 else []
+    if len(text) < MIN_CHARS_FOR_SUMMARY:
+        return "", generate_tags(text) if len(text) > MIN_CHARS_FOR_UPDATE else []
 
     cats = ", ".join(_lang["tag_categories"])
-    raw = _call_ai(_lang["combined_prompt"].format(cats=cats) + text[:15000])
+    raw = _call_ai(_lang["combined_prompt"].format(cats=cats) + text[:AI_MAX_INPUT_CHARS])
     if not raw:
         return "", []
 
@@ -1147,18 +1186,25 @@ def build_note_content(
     tags_str = "[" + ", ".join(tags) + "]"
 
     # --- Frontmatter ---
+    def _escape_yaml_value(val: str) -> str:
+        """Escape a string for safe use as a double-quoted YAML value."""
+        return val.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ").replace("\r", "")
+
+    safe_author_name = _escape_yaml_value(author_name)
+    safe_author_handle = _escape_yaml_value(author_handle)
+
     fm = [
         "---",
         "source: x-bookmarks",
-        f'author: "@{author_handle}"',
-        f'author_name: "{author_name}"',
+        f'author: "@{safe_author_handle}"',
+        f'author_name: "{safe_author_name}"',
         f'tweet_id: "{tweet_id}"',
         f'tweet_url: "{tweet_url}"',
         f"date: {date_str}",
         f'synced_at: "{synced_at}"',
     ]
     if article_title:
-        fm.append(f'title: "{article_title}"')
+        fm.append(f'title: "{_escape_yaml_value(article_title)}"')
     if article_source_url:
         fm.append(f'article_url: "{article_source_url}"')
     if metrics:
@@ -1324,10 +1370,23 @@ def _parse_frontmatter(path: Path) -> Optional[Dict[str, str]]:
             return None
         end_idx = text.index("---", 3)
         fm: Dict[str, str] = {}
+        current_key: Optional[str] = None
+        current_value_lines: List[str] = []
         for line in text[3:end_idx].strip().split("\n"):
-            if ":" in line:
+            # Check if this line starts a new key: value pair
+            if ":" in line and not line.startswith(" ") and not line.startswith("\t"):
+                # Save previous key if any
+                if current_key is not None:
+                    fm[current_key] = "\n".join(current_value_lines).strip().strip('"')
                 k, v = line.split(":", 1)
-                fm[k.strip()] = v.strip().strip('"')
+                current_key = k.strip()
+                current_value_lines = [v.strip()]
+            elif current_key is not None:
+                # Continuation line for multi-line value
+                current_value_lines.append(line)
+        # Save last key
+        if current_key is not None:
+            fm[current_key] = "\n".join(current_value_lines).strip().strip('"')
         return fm
     except Exception:
         return None
@@ -1409,12 +1468,15 @@ def _update_existing_notes(output_dir: Path) -> int:
         if not content.startswith("---"):
             continue
 
-        has_summary = (f"> **{_lang['summary_label']}:**" in content
-                       or "> **Summary:**" in content
-                       or "> **摘要：**" in content)
-        has_translation = (f"**{_lang['translation_label']}:**" in content
-                          or "**Chinese Translation:**" in content
-                          or "**中文翻译：**" in content)
+        # Check all known language variants for summary and translation
+        has_summary = any(
+            f"> **{I18N[lc]['summary_label']}:**" in content
+            for lc in I18N
+        )
+        has_translation = any(
+            f"**{I18N[lc]['translation_label']}:**" in content
+            for lc in I18N
+        )
 
         # Extract body text (after frontmatter) for AI input
         try:
@@ -1429,17 +1491,16 @@ def _update_existing_notes(output_dir: Path) -> int:
                         "**Quoted", "**Chinese Translation", "**中文翻译",
                         "**Video", "**视频", "**Links:", "![[media/"]:
             idx = raw_text.find(marker)
-            if idx > 0 and marker in ("---",):
-                # Keep text before first ---
-                pass
-            elif idx > 0:
+            if idx > 0:
                 raw_text = raw_text[:idx]
+                if marker == "---":
+                    break
         raw_text = raw_text.strip()
 
-        if len(raw_text) < 50:
+        if len(raw_text) < MIN_CHARS_FOR_UPDATE:
             continue
 
-        needs_summary = not has_summary and len(raw_text) >= 300
+        needs_summary = not has_summary and len(raw_text) >= MIN_CHARS_FOR_SUMMARY
         needs_translation = not has_translation and is_primarily_english(raw_text)
 
         if not needs_summary and not needs_translation:
