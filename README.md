@@ -208,20 +208,6 @@ A: Yes. The output is standard Markdown files. Works with any Markdown editor or
 **Q: Do I need an AI API key?**
 A: No. AI features (summary, tags, translation) are optional enhancements.
 
-## Comparison
-
-| | birdseed | Readwise | x2o |
-|---|---|---|---|
-| Price | Free | ~$8/month | Free |
-| Privacy | Fully local | Cloud service | Fully local |
-| X Articles | ✅ Full text | ❌ | ❌ |
-| AI enrichment | ✅ Summary + tags + translation | Basic | ✅ Classification |
-| Incremental sync | ✅ | ✅ | ❌ (full export) |
-| External articles | ✅ (trafilatura) | ✅ | ❌ |
-| Local images | ✅ | ❌ | ❌ |
-| Engagement metrics | ✅ | ✅ | ✅ |
-| Multi-platform reading | ❌ | ✅ (web, mobile, Kindle) | ❌ |
-| Beyond X bookmarks | ❌ | ✅ (Kindle, RSS, PDF, etc.) | ❌ |
 
 ## 中文说明
 
