@@ -85,9 +85,9 @@ SHORT_URL_DOMAINS = {
 }
 
 TAG_CATEGORIES = [
-    "AI", "LLM", "设计", "前端", "后端", "全栈", "DevOps", "移动开发",
-    "游戏开发", "数据科学", "区块链", "产品", "创业", "效率工具",
-    "开源", "教程", "观点", "新闻", "生活",
+    "AI", "LLM", "Design", "Frontend", "Backend", "Fullstack", "DevOps", "Mobile",
+    "Gamedev", "Data Science", "Blockchain", "Product", "Startup", "Productivity",
+    "Open Source", "Tutorial", "Opinion", "News", "Lifestyle",
 ]
 
 # --- GraphQL API constants (from X web client) ---
@@ -659,7 +659,7 @@ def normalize_text(value: str) -> str:
 def clean_title(text: str, limit: int = 50) -> str:
     """Extract a readable title from tweet text."""
     if not text:
-        return "未命名收藏"
+        return "Untitled Bookmark"
     # Remove URLs
     cleaned = re.sub(r"https?://\S+", "", text).strip()
     # Remove @mentions at the start
@@ -674,8 +674,8 @@ def clean_title(text: str, limit: int = 50) -> str:
         if line and len(line) > 5:
             # Clean and truncate
             title = re.sub(r"\s+", " ", line).strip(" -—_·")
-            return title[:limit] if title else "未命名收藏"
-    return "未命名收藏"
+            return title[:limit] if title else "Untitled Bookmark"
+    return "Untitled Bookmark"
 
 
 def slugify(text: str, limit: int = 60) -> str:
@@ -767,7 +767,7 @@ def _fetch_article_trafilatura(url: str) -> str:
         text = normalize_text(extracted)
         # Truncate overly long articles
         if len(text) > 5000:
-            text = text[:5000] + "\n\n[...内容已截断]"
+            text = text[:5000] + "\n\n[...truncated]"
         return text
     return ""
 
@@ -923,7 +923,8 @@ def generate_summary(text: str) -> str:
     if len(text) < 300:
         return ""
     result = _call_ai(
-        "用中文写一段 3-5 句话的摘要概括以下内容的核心观点。直接输出摘要，不要任何前缀。\n\n"
+        "Write a concise 3-5 sentence summary of the following content. "
+        "Output the summary only, no prefix or label.\n\n"
         + text[:15000]
     )
     if result:
@@ -934,8 +935,9 @@ def generate_summary(text: str) -> str:
 def generate_tags(text: str) -> List[str]:
     cats = ", ".join(TAG_CATEGORIES)
     raw = _call_ai(
-        f"根据以下内容，从这些类别中选择 1-3 个最相关的标签：{cats}\n"
-        "只输出标签，用英文逗号分隔，不要加 # 号。如果都不合适可以创建新标签（中文）。\n\n"
+        f"Based on the following content, pick 1-3 of the most relevant tags from: {cats}\n"
+        "Output tags only, comma-separated, no # prefix. "
+        "You may create a new short tag if none fit.\n\n"
         + text[:3000]
     )
     if not raw:
@@ -953,12 +955,13 @@ def generate_summary_and_tags(text: str) -> Tuple[str, List[str]]:
 
     cats = ", ".join(TAG_CATEGORIES)
     raw = _call_ai(
-        "根据以下内容，完成两个任务：\n\n"
-        "任务1 - 摘要：用中文写 3-5 句话概括核心观点。\n"
-        f"任务2 - 标签：从这些类别中选 1-3 个最相关的：{cats}（如果都不合适可以创建新标签）\n\n"
-        "严格按以下格式输出，不要加其他内容：\n"
-        "摘要：<你的摘要>\n"
-        "标签：<标签1>, <标签2>, <标签3>\n\n"
+        "Based on the following content, do two tasks:\n\n"
+        "Task 1 — Summary: Write a concise 3-5 sentence summary.\n"
+        f"Task 2 — Tags: Pick 1-3 relevant tags from: {cats} "
+        "(create a new short tag if none fit)\n\n"
+        "Output in exactly this format, nothing else:\n"
+        "Summary: <your summary>\n"
+        "Tags: <tag1>, <tag2>, <tag3>\n\n"
         + text[:15000]
     )
     if not raw:
@@ -969,10 +972,10 @@ def generate_summary_and_tags(text: str) -> Tuple[str, List[str]]:
 
     for line in raw.strip().split("\n"):
         line = line.strip()
-        if line.startswith("摘要：") or line.startswith("摘要:"):
-            summary = line.split("：", 1)[-1].split(":", 1)[-1].strip()
-        elif line.startswith("标签：") or line.startswith("标签:"):
-            tag_str = line.split("：", 1)[-1].split(":", 1)[-1].strip()
+        if line.lower().startswith("summary:"):
+            summary = line.split(":", 1)[-1].strip()
+        elif line.lower().startswith("tags:"):
+            tag_str = line.split(":", 1)[-1].strip()
             tags = [t.strip().strip("#") for t in re.split(r"[,，、]", tag_str) if t.strip()][:3]
 
     if summary and tags:
@@ -1058,7 +1061,7 @@ def build_note_content(
 
     # --- Summary ---
     if summary:
-        lines.extend([f"> **摘要：** {summary.replace(chr(10), ' ')}", ""])
+        lines.extend([f"> **Summary:** {summary.replace(chr(10), ' ')}", ""])
 
     # --- Body ---
     if article_text and is_link_tweet:
@@ -1070,7 +1073,7 @@ def build_note_content(
         lines.append(article_text)
     elif article_text:
         lines.append(full_text or "")
-        lines.extend(["", "---", "", "**引用文章：**", "", article_text])
+        lines.extend(["", "---", "", "**Referenced Article:**", "", article_text])
     else:
         lines.append(full_text or "")
 
@@ -1081,9 +1084,9 @@ def build_note_content(
         qt_author = quoted_tweet.get("authorHandle") or ""
         lines.extend(["", "---", ""])
         if qt_author:
-            lines.append(f"**引用 @{qt_author}：**")
+            lines.append(f"**Quoted @{qt_author}:**")
         else:
-            lines.append("**引用推文：**")
+            lines.append("**Quoted tweet:**")
         lines.append("")
         if qt_url:
             lines.append(f"> [{qt_url}]({qt_url})")
@@ -1095,12 +1098,12 @@ def build_note_content(
     if is_primarily_english(text_for_tl):
         tl = translate_to_chinese(text_for_tl)
         if tl:
-            lines.extend(["", "---", "", "**中文翻译：**", "", tl])
+            lines.extend(["", "---", "", "**Chinese Translation:**", "", tl])
 
     # --- Video ---
     if video_urls:
-        lines.extend(["", "---", "", "**视频：**"])
-        lines.append(f"- [在 X 上观看]({tweet_url})")
+        lines.extend(["", "---", "", "**Video:**"])
+        lines.append(f"- [Watch on X]({tweet_url})")
         for vu in video_urls:
             if vu != tweet_url and not vu.startswith("blob:"):
                 lines.append(f"- {vu}")
@@ -1231,7 +1234,7 @@ def generate_moc(output_dir: Path):
 
         date = fm.get("date", note_path.name[:10])
         month = date[:7]
-        title = note_path.stem[11:].replace("-", " ").strip() or "未命名"
+        title = note_path.stem[11:].replace("-", " ").strip() or "Untitled"
         author = fm.get("author_name", fm.get("author", ""))
 
         by_month.setdefault(month, []).append({
@@ -1245,7 +1248,7 @@ def generate_moc(output_dir: Path):
     lines = [
         "# X Bookmarks Index",
         "",
-        f"> {total} 条收藏 | 更新于 {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"> {total} bookmarks | updated {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         "",
     ]
 

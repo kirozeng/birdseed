@@ -81,16 +81,16 @@ title: "How To Make Obsidian Beautiful"
 likes: 1517
 retweets: 97
 replies: 24
-tags: [x-bookmark, 效率工具, 教程, 开源]
+tags: [x-bookmark, Productivity, Tutorial, Open Source]
 ---
 
-> **摘要：** AI-generated summary here...
+> **Summary:** AI-generated summary here...
 
 Full article content...
 
 ---
 
-**中文翻译：** (auto-translated for English content)
+**Chinese Translation:** (auto-translated for English content)
 
 ---
 
@@ -117,7 +117,7 @@ export ANTHROPIC_API_KEY="your-key"
 
 | Feature | Without AI | With AI |
 |---------|-----------|---------|
-| Summary | ❌ | ✅ 3-5 sentence Chinese summary |
+| Summary | ❌ | ✅ 3-5 sentence summary |
 | Tags | `[x-bookmark]` only | ✅ Auto-classified (AI, Design, etc.) |
 | Translation | ❌ | ✅ English → Chinese |
 
@@ -207,8 +207,8 @@ A: Yes. The output is standard Markdown files. Works with any Markdown editor or
 **Q: Do I need an AI API key?**
 A: No. AI features (summary, tags, translation) are optional enhancements.
 
-**Q: The AI summary and tags are in Chinese. Can I change the language?**
-A: Currently the AI prompts are hardcoded for Chinese output. To change: edit the prompt strings in `generate_summary_and_tags()` and `translate_to_chinese()` in `sync.py`. PRs for multi-language support are welcome.
+**Q: Can I change the AI output language?**
+A: Summary and tags are generated in English by default. The translation feature translates English→Chinese. To change target language: edit the prompt strings in `translate_to_chinese()` and `generate_summary_and_tags()` in `sync.py`. PRs for multi-language support are welcome.
 
 
 ## 中文说明
