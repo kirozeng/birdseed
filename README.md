@@ -35,14 +35,24 @@ python -m playwright install chromium
 pip install trafilatura lxml_html_clean
 ```
 
-### 2. Log in to X
+### 2. Authenticate with X
 
+**Option A: Browser login (recommended for first time)**
 ```bash
 python3 login.py
 ```
-
-This opens Chrome. Log in to X manually (Google SSO, MFA all supported).
+Opens Chrome. Log in to X manually (Google SSO, MFA all supported).
 Press Enter after your bookmarks page loads. Done — cookies saved locally.
+
+**Option B: Cookie string (no Chrome needed)**
+```bash
+# Copy cookie from browser DevTools → Network → any request → Headers → Cookie
+python3 sync.py --cookie "ct0=xxx; auth_token=xxx"
+
+# Or set as environment variable
+export BIRDSEED_COOKIE="ct0=xxx; auth_token=xxx"
+python3 sync.py
+```
 
 ### 3. Sync
 
@@ -135,11 +145,13 @@ python3 sync.py --help
 
 | Flag | Description |
 |------|-------------|
+| `--cookie STRING` | X cookie string (alternative to login.py) |
 | `--output-dir PATH` | Output directory (default: `~/birdseed-output`) |
 | `--limit N` | Max bookmarks to fetch (default: 200) |
 | `--fetch-articles` / `--no-fetch-articles` | Extract external article text (default: on) |
 | `--download-media` / `--no-download-media` | Download images locally (default: on) |
-| `--rewrite-visible` | Rewrite notes even if already synced |
+| `--rewrite-visible` | Rewrite all visible bookmarks |
+| `--update-existing` | Add missing summary/tags/translation to existing notes |
 | `-v`, `--verbose` | Debug logging |
 | `-q`, `--quiet` | Warnings only |
 

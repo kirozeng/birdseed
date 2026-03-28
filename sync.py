@@ -149,12 +149,35 @@ GRAPHQL_FEATURES = {
 # Cookie management
 # ---------------------------------------------------------------------------
 
-def load_cookie_string() -> str:
-    """Build cookie string from storage_state.json."""
+def load_cookie_string(cli_cookie: Optional[str] = None) -> str:
+    """Load cookie string from CLI arg, env var, or storage_state.json.
+
+    Priority: --cookie flag > BIRDSEED_COOKIE env > data/storage_state.json
+    """
+    # 1. CLI argument
+    if cli_cookie:
+        cookie_str = cli_cookie.strip()
+        if "ct0=" not in cookie_str:
+            raise SystemExit(
+                "Cookie string must contain ct0 (CSRF token).\n"
+                "Copy the full cookie from browser DevTools → Network → Headers."
+            )
+        return cookie_str
+
+    # 2. Environment variable
+    env_cookie = os.environ.get("BIRDSEED_COOKIE", "").strip()
+    if env_cookie:
+        if "ct0=" not in env_cookie:
+            raise SystemExit("BIRDSEED_COOKIE must contain ct0 (CSRF token).")
+        return env_cookie
+
+    # 3. storage_state.json (from login.py)
     if not STORAGE_STATE_PATH.exists():
         raise SystemExit(
-            f"Missing storage state: {STORAGE_STATE_PATH}\n"
-            "Run login.py first or provide a cookie file."
+            f"No cookie found. Provide one of:\n"
+            f"  --cookie \"ct0=...; auth_token=...\"  (from browser DevTools)\n"
+            f"  BIRDSEED_COOKIE env var\n"
+            f"  Run login.py to save cookies automatically"
         )
     data = json.loads(STORAGE_STATE_PATH.read_text(encoding="utf-8"))
     cookies = data.get("cookies", [])
@@ -168,8 +191,7 @@ def load_cookie_string() -> str:
     cookie_str = "; ".join(f"{c['name']}={c['value']}" for c in x_cookies)
 
     # Verify ct0 exists
-    ct0_cookies = [c for c in x_cookies if c["name"] == "ct0"]
-    if not ct0_cookies:
+    if "ct0=" not in cookie_str:
         raise SystemExit("ct0 (CSRF token) not found in cookies. Re-run login.py.")
 
     return cookie_str
@@ -1283,11 +1305,125 @@ def generate_moc(output_dir: Path):
 
 
 # ---------------------------------------------------------------------------
+# Update existing notes (add missing AI enrichment)
+# ---------------------------------------------------------------------------
+
+def _update_existing_notes(output_dir: Path) -> int:
+    """Re-enrich existing notes: add missing summary, tags, translation."""
+    ai_provider, _ = _get_ai_key()
+    if ai_provider == "none":
+        log.error("--update-existing requires an AI API key (GEMINI_API_KEY or ANTHROPIC_API_KEY)")
+        return 1
+
+    log.info("AI provider: %s", ai_provider)
+    notes = sorted(output_dir.glob("2*.md"))
+    if not notes:
+        log.info("No notes found in %s", output_dir)
+        return 0
+
+    log.info("Scanning %d notes for missing enrichment...", len(notes))
+    updated = 0
+
+    for note_path in notes:
+        try:
+            content = note_path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+
+        if not content.startswith("---"):
+            continue
+
+        has_summary = "> **Summary:**" in content
+        has_translation = "**Chinese Translation:**" in content
+
+        # Extract body text (after frontmatter) for AI input
+        try:
+            fm_end = content.index("---", 3) + 3
+            body = content[fm_end:].strip()
+        except ValueError:
+            continue
+
+        # Strip existing sections to get raw text
+        raw_text = body
+        for marker in ["---", "> **Summary:**", "**Referenced Article:**",
+                        "**Quoted", "**Chinese Translation:**",
+                        "**Video:**", "**Links:**", "![[media/"]:
+            idx = raw_text.find(marker)
+            if idx > 0 and marker in ("---",):
+                # Keep text before first ---
+                pass
+            elif idx > 0:
+                raw_text = raw_text[:idx]
+        raw_text = raw_text.strip()
+
+        if len(raw_text) < 50:
+            continue
+
+        needs_summary = not has_summary and len(raw_text) >= 300
+        needs_translation = not has_translation and is_primarily_english(raw_text)
+
+        if not needs_summary and not needs_translation:
+            continue
+
+        log.info("Updating: %s (summary=%s, translation=%s)",
+                 note_path.name, needs_summary, needs_translation)
+
+        additions = []
+
+        if needs_summary:
+            summary, tags = generate_summary_and_tags(raw_text)
+            if summary:
+                additions.append(f"> **Summary:** {summary.replace(chr(10), ' ')}\n")
+                log.info("  Added summary (%d chars)", len(summary))
+
+        if needs_translation:
+            tl = translate_to_chinese(raw_text)
+            if tl:
+                additions.append(f"\n---\n\n**Chinese Translation:**\n\n{tl}\n")
+                log.info("  Added translation (%d chars)", len(tl))
+
+        if additions:
+            # Insert summary after frontmatter, translation before metrics
+            lines = content.split("\n")
+            new_lines = []
+            fm_count = 0
+            summary_inserted = False
+
+            for line in lines:
+                if line.strip() == "---":
+                    fm_count += 1
+                    new_lines.append(line)
+                    if fm_count == 2 and needs_summary and additions:
+                        new_lines.append("")
+                        new_lines.append(additions[0].strip())
+                        new_lines.append("")
+                        summary_inserted = True
+                    continue
+                new_lines.append(line)
+
+            new_content = "\n".join(new_lines)
+
+            # Append translation at end (before final newline)
+            if needs_translation and len(additions) > (1 if needs_summary else 0):
+                tl_block = additions[-1]
+                new_content = new_content.rstrip() + "\n" + tl_block + "\n"
+
+            note_path.write_text(new_content, encoding="utf-8")
+            updated += 1
+
+    log.info("Updated %d / %d notes", updated, len(notes))
+    generate_moc(output_dir)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="birdseed — Sync X bookmarks to Obsidian")
+    parser.add_argument("--cookie", default=None,
+                        help="X cookie string (must contain ct0). Alternative to login.py")
     parser.add_argument("--output-dir", default=None, help="Output directory (default: ~/birdseed-output)")
     parser.add_argument(
         "--limit", type=int, default=200,
@@ -1304,6 +1440,10 @@ def main() -> int:
     parser.add_argument(
         "--rewrite-visible", action="store_true",
         help="Rewrite notes for visible bookmarks even if seen"
+    )
+    parser.add_argument(
+        "--update-existing", action="store_true",
+        help="Re-enrich existing notes: add missing summary, tags, and translation"
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
     parser.add_argument("--quiet", "-q", action="store_true", help="Warnings only")
@@ -1322,8 +1462,12 @@ def main() -> int:
             "translation, summary, and auto-tags will be skipped"
         )
 
+    # --- Update existing notes mode ---
+    if args.update_existing:
+        return _update_existing_notes(output_dir)
+
     # --- Step 1: Load cookies and fetch bookmarks via GraphQL ---
-    cookie_str = load_cookie_string()
+    cookie_str = load_cookie_string(cli_cookie=args.cookie)
     log.info("Fetching bookmarks via GraphQL API...")
     all_items = fetch_bookmarks_graphql(cookie_str, limit=args.limit)
     log.info("Fetched %d bookmarks total", len(all_items))
