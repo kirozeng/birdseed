@@ -328,7 +328,19 @@ def fetch_bookmarks_graphql(
     bookmarks: List[Dict] = []
     cursor: Optional[str] = None
 
+    # Hard safety cap: prevent infinite pagination if API returns cursor
+    # but no new items (edge case that shouldn't happen but let's be safe).
+    max_iterations = max((limit // 20) + 5, 10)
+    iteration = 0
+
     while len(bookmarks) < limit:
+        iteration += 1
+        if iteration > max_iterations:
+            log.warning(
+                "Reached max pagination iterations (%d). Stopping to prevent infinite loop.",
+                max_iterations,
+            )
+            break
         variables: Dict[str, Any] = {
             "count": min(20, limit - len(bookmarks)),
             "includePromotedContent": False,
@@ -586,11 +598,27 @@ def fetch_x_article(cookie_str: str, tweet_id: str) -> Dict:
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     )
 
-    try:
-        with urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except Exception as e:
-        log.warning("TweetDetail fetch failed for %s: %s", tweet_id, e)
+    # Try once, then retry once with backoff on transient failures
+    data = None
+    last_error = None
+    for attempt in range(2):
+        try:
+            with urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            break
+        except HTTPError as e:
+            # Don't retry on 4xx errors (auth, not found) — they're deterministic
+            if 400 <= e.code < 500:
+                log.warning("TweetDetail %d for %s, skipping", e.code, tweet_id)
+                return {}
+            last_error = e
+        except Exception as e:
+            last_error = e
+        if attempt == 0:
+            time.sleep(1.5)
+
+    if data is None:
+        log.warning("TweetDetail fetch failed for %s after retry: %s", tweet_id, last_error)
         return {}
 
     instructions = (
@@ -998,11 +1026,16 @@ def _get_ai_key() -> tuple:
     return ("none", "")
 
 
+# AI model overrides via env vars (advanced users)
+GEMINI_MODEL = os.environ.get("BIRDSEED_GEMINI_MODEL", "gemini-2.0-flash")
+CLAUDE_MODEL = os.environ.get("BIRDSEED_CLAUDE_MODEL", "claude-sonnet-4-6")
+
+
 def _call_gemini(prompt: str, api_key: str, timeout: int = 90) -> str:
-    """Call Gemini API."""
+    """Call Gemini API. Model selectable via BIRDSEED_GEMINI_MODEL env var."""
     url = (
-        "https://generativelanguage.googleapis.com/v1beta/"
-        "models/gemini-2.0-flash:generateContent"
+        f"https://generativelanguage.googleapis.com/v1beta/"
+        f"models/{GEMINI_MODEL}:generateContent"
     )
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -1033,9 +1066,9 @@ def _call_gemini(prompt: str, api_key: str, timeout: int = 90) -> str:
 
 
 def _call_claude(prompt: str, api_key: str, timeout: int = 90) -> str:
-    """Call Claude API."""
+    """Call Claude API. Model selectable via BIRDSEED_CLAUDE_MODEL env var."""
     payload = {
-        "model": "claude-sonnet-4-6",
+        "model": CLAUDE_MODEL,
         "max_tokens": 4096,
         "messages": [{"role": "user", "content": prompt}],
     }

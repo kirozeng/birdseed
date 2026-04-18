@@ -1,0 +1,57 @@
+[project]
+name = "birdseed"
+version = "1.0.1"
+description = "Sync X (Twitter) bookmarks to Obsidian. Locally, incrementally, with AI."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Kiro Zeng" }
+]
+requires-python = ">=3.9"
+keywords = ["twitter", "x", "bookmarks", "obsidian", "markdown", "sync", "ai"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Utilities",
+]
+
+# Core runtime has ZERO required dependencies (uses stdlib urllib)
+dependencies = []
+
+[project.optional-dependencies]
+# For login.py (browser-based cookie capture)
+login = ["playwright>=1.40"]
+
+# For external article text extraction
+article = ["trafilatura>=1.6", "lxml_html_clean>=0.1"]
+
+# Everything
+all = [
+    "playwright>=1.40",
+    "trafilatura>=1.6",
+    "lxml_html_clean>=0.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/kirozeng/birdseed"
+Repository = "https://github.com/kirozeng/birdseed"
+Issues = "https://github.com/kirozeng/birdseed/issues"
+
+[project.scripts]
+birdseed = "sync:main"
+birdseed-login = "login:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["sync", "login"]
