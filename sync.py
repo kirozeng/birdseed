@@ -1667,6 +1667,7 @@ def main() -> int:
         state["lastRun"] = datetime.now().astimezone().isoformat()
         save_state(state)
         log.info("No new bookmarks.")
+        print(f"birdseed: fetched={len(all_items)} new=0 wrote=0")
         return 0
 
     # --- Step 3: Fetch X Article content ---
@@ -1730,6 +1731,9 @@ def main() -> int:
         "Done: fetched=%d new=%d wrote=%d",
         len(all_items), len(new_items), len(written),
     )
+    # Always print a single-line summary to stdout (even in --quiet mode)
+    # so automation/cron jobs can parse the result reliably.
+    print(f"birdseed: fetched={len(all_items)} new={len(new_items)} wrote={len(written)}")
     return 0
 
 
