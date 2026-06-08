@@ -27,48 +27,55 @@ bookmarks → GraphQL API → AI enrichment → Obsidian Markdown
 git clone https://github.com/kirozeng/birdseed.git
 cd birdseed
 
-# Required for login only
-pip install playwright
+# Recommended editable install with login + article extraction support
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[login,article]"
 python -m playwright install chromium
 
-# Optional: external article extraction
-pip install trafilatura lxml_html_clean
+# Minimal install if you only use --cookie / BIRDSEED_COOKIE
+python -m pip install -e .
 ```
 
 ### 2. Authenticate with X
 
 **Option A: Browser login (recommended for first time)**
 ```bash
-python3 login.py
+birdseed-login
 ```
 Opens Chrome. Log in to X manually (Google SSO, MFA all supported).
 Press Enter after your bookmarks page loads. Done — cookies saved locally.
 
+You can also run `python3 login.py` directly from the repo.
+
 **Option B: Cookie string (no Chrome needed)**
 ```bash
 # Copy cookie from browser DevTools → Network → any request → Headers → Cookie
-python3 sync.py --cookie "ct0=xxx; auth_token=xxx"
+birdseed --cookie "ct0=xxx; auth_token=xxx"
 
 # Or set as environment variable
 export BIRDSEED_COOKIE="ct0=xxx; auth_token=xxx"
-python3 sync.py
+birdseed
 ```
 
 ### 3. Sync
 
 ```bash
 # First sync — fetches up to 200 bookmarks
-python3 sync.py
+birdseed
 
 # With verbose logging
-python3 sync.py -v
+birdseed -v
 
 # Custom output directory
-python3 sync.py --output-dir ~/my-obsidian-vault/X-Bookmarks
+birdseed --output-dir ~/my-obsidian-vault/X-Bookmarks
 
 # Limit how many to fetch
-python3 sync.py --limit 50
+birdseed --limit 50
 ```
+
+If you have not installed the entry points, use `python3 sync.py` from the repo.
 
 That's it. Open the output folder in Obsidian.
 
@@ -140,7 +147,7 @@ birdseed works perfectly fine without AI — you just won't get summaries, smart
 ## All Options
 
 ```bash
-python3 sync.py --help
+birdseed --help
 ```
 
 | Flag | Description |
@@ -210,7 +217,7 @@ If you use [OpenClaw](https://github.com/openclaw/openclaw), add birdseed as a c
   "payload": {
     "kind": "agentTurn",
     "model": "google/gemini-3-flash-preview",
-    "message": "Run `python3 ~/Projects/birdseed/sync.py --quiet`, then report new bookmarks count and any errors. Exit code 2 = cookie expired, tell me to re-run `python3 ~/Projects/birdseed/login.py`."
+    "message": "Run `birdseed --quiet`, then report new bookmarks count and any errors. Exit code 2 = cookie expired, tell me to re-run `birdseed-login`."
   }
 }
 ```
@@ -285,20 +292,20 @@ A: Yes! Use `--language zh` for Chinese output (summary, tags, labels all in Chi
 git clone https://github.com/kirozeng/birdseed.git
 cd birdseed
 
-# 2. 装依赖（仅 login 用）
-pip install playwright
+# 2. 推荐：可编辑安装，并启用登录 + 外链文章提取
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[login,article]"
 python -m playwright install chromium
 
-# 可选：外链文章提取
-pip install trafilatura lxml_html_clean
-
 # 3. 登录 X
-python3 login.py
+birdseed-login
 # 会打开 Chrome，手动登录（支持 Google SSO/二步验证）
 # 收藏页加载后按回车，cookie 自动保存
 
 # 4. 同步
-python3 sync.py --language zh
+birdseed --language zh
 ```
 
 ### 配置中文输出
@@ -312,7 +319,7 @@ python3 sync.py --language zh
 }
 ```
 
-设好后 `python3 sync.py` 自动用中文输出：摘要、标签、标签内容都是中文，英文内容附中文翻译。
+设好后 `birdseed` 自动用中文输出：摘要、标签、标签内容都是中文，英文内容附中文翻译。
 
 ### AI 增强（可选）
 
@@ -329,17 +336,19 @@ export ANTHROPIC_API_KEY="your-key"
 ### 常用命令
 
 ```bash
-python3 sync.py                    # 普通增量同步
-python3 sync.py -q                 # 安静模式（cron 用）
-python3 sync.py -v                 # 详细日志
-python3 sync.py --limit 50         # 限制拉取数量
-python3 sync.py --rewrite-visible  # 重写所有可见收藏
-python3 sync.py --update-existing  # 给已有笔记补摘要/标签/翻译
+birdseed                    # 普通增量同步
+birdseed -q                 # 安静模式（cron 用）
+birdseed -v                 # 详细日志
+birdseed --limit 50         # 限制拉取数量
+birdseed --rewrite-visible  # 重写所有可见收藏
+birdseed --update-existing  # 给已有笔记补摘要/标签/翻译
 ```
+
+如果没有安装命令入口，也可以在仓库目录里继续用 `python3 sync.py` / `python3 login.py`。
 
 ### Cookie 过期
 
-Cookie 能擑几周到几个月。过期时 `sync.py` exit code 2，重新跑 `python3 login.py` 就行。
+Cookie 通常能持续几周到几个月。过期时 `birdseed` exit code 2，重新跑 `birdseed-login` 就行。
 
 ### OpenClaw 集成
 
@@ -353,7 +362,7 @@ Cookie 能擑几周到几个月。过期时 `sync.py` exit code 2，重新跑 `p
   "payload": {
     "kind": "agentTurn",
     "model": "google/gemini-3-flash-preview",
-    "message": "执行 X 收藏夹同步：运行 `python3 ~/Projects/birdseed/sync.py --quiet`，然后汇报结果。exit code 2 = cookie 过期。"
+    "message": "执行 X 收藏夹同步：运行 `birdseed --quiet`，然后汇报结果。exit code 2 = cookie 过期。"
   }
 }
 ```

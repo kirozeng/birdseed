@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Unit tests for birdseed sync.py — no network dependency."""
 
+import json
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import sync as sync_module
 from sync import (
     is_noise_content,
     extract_main_content,
@@ -140,6 +143,144 @@ def test_normalize_text():
     print("✓ Normalize text tests passed")
 
 
+def test_merge_frontmatter_tags():
+    content = """---
+source: x-bookmarks
+tags: [x-bookmark]
+---
+
+Body
+"""
+
+    updated, added = sync_module._merge_frontmatter_tags(
+        content, ["AI", "Open Source", "AI"]
+    )
+    assert added == ["AI", "Open-Source"]
+    assert "tags: [x-bookmark, AI, Open-Source]" in updated
+
+    updated_again, added_again = sync_module._merge_frontmatter_tags(updated, ["AI"])
+    assert added_again == []
+    assert updated_again == updated
+    print("✓ Frontmatter tag merge tests passed")
+
+
+def test_update_existing_notes_adds_summary_and_tags():
+    set_language("en")
+    body = "这是一段关于 AI、Obsidian 和知识管理的中文内容。" * 30
+
+    old_get_ai_key = sync_module._get_ai_key
+    old_generate_summary_and_tags = sync_module.generate_summary_and_tags
+    try:
+        sync_module._get_ai_key = lambda: ("gemini", "fake-key")
+        sync_module.generate_summary_and_tags = lambda text: (
+            "生成摘要",
+            ["AI", "Open Source"],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            note_path = output_dir / "2026-03-25-Test.md"
+            note_path.write_text(
+                f"""---
+source: x-bookmarks
+tweet_id: "tweet-1"
+date: 2026-03-25
+tags: [x-bookmark]
+---
+
+{body}
+""",
+                encoding="utf-8",
+            )
+
+            assert sync_module._update_existing_notes(output_dir) == 0
+            updated = note_path.read_text(encoding="utf-8")
+            assert "> **Summary:** 生成摘要" in updated
+            assert "tags: [x-bookmark, AI, Open-Source]" in updated
+            assert (output_dir / "X Bookmarks Index.md").exists()
+    finally:
+        sync_module._get_ai_key = old_get_ai_key
+        sync_module.generate_summary_and_tags = old_generate_summary_and_tags
+    print("✓ Existing note enrichment tests passed")
+
+
+def test_main_only_marks_written_items_seen():
+    old_argv = sys.argv[:]
+    old_state_path = sync_module.STATE_PATH
+    old_config_path = sync_module.CONFIG_PATH
+    old_load_cookie_string = sync_module.load_cookie_string
+    old_fetch_bookmarks_graphql = sync_module.fetch_bookmarks_graphql
+    old_enrich_x_articles = sync_module.enrich_x_articles
+    old_resolve_tco_urls_in_items = sync_module.resolve_tco_urls_in_items
+    old_extract_external_urls = sync_module._extract_external_urls
+    old_generate_summary_and_tags = sync_module.generate_summary_and_tags
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            output_dir = tmp_dir / "output"
+            sync_module.STATE_PATH = tmp_dir / "state.json"
+            sync_module.CONFIG_PATH = tmp_dir / "config.json"
+
+            good_item = {
+                "tweetId": "good-1",
+                "url": "https://x.com/user/status/good-1",
+                "authorName": "User",
+                "authorHandle": "user",
+                "postedAt": "2026-03-25",
+                "fullText": "This is a meaningful bookmark about AI and Obsidian notes.",
+                "media": [],
+                "metrics": {},
+            }
+            noise_item = {
+                "tweetId": "noise-1",
+                "url": "https://x.com/user/status/noise-1",
+                "authorName": "User",
+                "authorHandle": "user",
+                "postedAt": "2026-03-25",
+                "fullText": "hi",
+                "media": [],
+                "metrics": {},
+            }
+
+            sync_module.load_cookie_string = lambda cli_cookie=None: "ct0=fake"
+            sync_module.fetch_bookmarks_graphql = lambda cookie_str, limit=200: [
+                good_item,
+                noise_item,
+            ]
+            sync_module.enrich_x_articles = lambda items, cookie_str: None
+            sync_module.resolve_tco_urls_in_items = lambda items: None
+            sync_module._extract_external_urls = lambda items: [
+                item.setdefault("externalUrls", []) for item in items
+            ]
+            sync_module.generate_summary_and_tags = lambda text: ("", [])
+
+            sys.argv = [
+                "sync.py",
+                "--output-dir",
+                str(output_dir),
+                "--no-fetch-articles",
+                "--no-download-media",
+            ]
+
+            assert sync_module.main() == 0
+            state = json.loads(sync_module.STATE_PATH.read_text(encoding="utf-8"))
+            assert "good-1" in state["seen"]
+            assert "noise-1" not in state["seen"]
+            assert len(list(output_dir.glob("2026-03-25-*.md"))) == 1
+    finally:
+        sys.argv = old_argv
+        sync_module.STATE_PATH = old_state_path
+        sync_module.CONFIG_PATH = old_config_path
+        sync_module.load_cookie_string = old_load_cookie_string
+        sync_module.fetch_bookmarks_graphql = old_fetch_bookmarks_graphql
+        sync_module.enrich_x_articles = old_enrich_x_articles
+        sync_module.resolve_tco_urls_in_items = old_resolve_tco_urls_in_items
+        sync_module._extract_external_urls = old_extract_external_urls
+        sync_module.generate_summary_and_tags = old_generate_summary_and_tags
+    print("✓ State update skips unwritten items tests passed")
+
+
 if __name__ == "__main__":
     test_is_noise_content()
     test_extract_main_content()
@@ -150,4 +291,7 @@ if __name__ == "__main__":
     test_parse_twitter_date()
     test_filename_format()
     test_normalize_text()
+    test_merge_frontmatter_tags()
+    test_update_existing_notes_adds_summary_and_tags()
+    test_main_only_marks_written_items_seen()
     print("\n✅ All tests passed!")

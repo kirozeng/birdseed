@@ -70,6 +70,7 @@ STORAGE_STATE_PATH = DATA_DIR / "storage_state.json"
 
 FALLBACK_OUTPUT_DIR = str(Path.home() / "birdseed-output")
 MEDIA_DIR_NAME = "media"
+STRUCTURAL_TAGS = {"x-bookmark", "article", "video", "quote"}
 
 # Thresholds for AI enrichment and text processing
 MIN_CHARS_FOR_SUMMARY = 300
@@ -1426,6 +1427,83 @@ def _parse_frontmatter(path: Path) -> Optional[Dict[str, str]]:
         return None
 
 
+def _safe_frontmatter_tag(tag: str) -> str:
+    tag = (tag or "").strip().strip("#").strip("'\"")
+    tag = re.sub(r"\s+", "-", tag)
+    tag = re.sub(r"[\x00-\x1f\x7f\[\],]", "", tag)
+    return tag.strip()
+
+
+def _parse_tags_value(value: str) -> List[str]:
+    raw = (value or "").strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
+    tags = []
+    for part in re.split(r"[,，\n]", raw):
+        tag = _safe_frontmatter_tag(part)
+        if tag:
+            tags.append(tag)
+    return tags
+
+
+def _format_tags_value(tags: List[str]) -> str:
+    return "[" + ", ".join(tags) + "]"
+
+
+def _merge_frontmatter_tags(content: str, new_tags: List[str]) -> Tuple[str, List[str]]:
+    """Merge generated tags into the YAML frontmatter tags line."""
+    safe_new_tags = [_safe_frontmatter_tag(t) for t in new_tags]
+    safe_new_tags = [t for t in safe_new_tags if t]
+    if not safe_new_tags or not content.startswith("---"):
+        return content, []
+
+    try:
+        fm_end = content.index("---", 3)
+    except ValueError:
+        return content, []
+
+    before = content[:fm_end]
+    after = content[fm_end:]
+    lines = before.split("\n")
+
+    tag_line_index: Optional[int] = None
+    existing_tags: List[str] = []
+    for idx, line in enumerate(lines):
+        if line.startswith("tags:"):
+            tag_line_index = idx
+            existing_tags = _parse_tags_value(line.split(":", 1)[1])
+            break
+
+    merged = list(existing_tags)
+    seen = set(existing_tags)
+    added = []
+    for tag in safe_new_tags:
+        if tag not in seen:
+            merged.append(tag)
+            seen.add(tag)
+            added.append(tag)
+
+    if not added:
+        return content, []
+
+    tag_line = f"tags: {_format_tags_value(merged)}"
+    if tag_line_index is not None:
+        lines[tag_line_index] = tag_line
+    else:
+        insert_at = len(lines) - 1 if lines and lines[-1] == "" else len(lines)
+        lines.insert(insert_at, tag_line)
+
+    return "\n".join(lines) + after, added
+
+
+def _insert_after_frontmatter(content: str, block: str) -> str:
+    try:
+        fm_end = content.index("---", 3) + 3
+    except ValueError:
+        return block.rstrip() + "\n\n" + content
+    return content[:fm_end] + "\n\n" + block.rstrip() + "\n" + content[fm_end:]
+
+
 def generate_moc(output_dir: Path):
     notes = sorted(output_dir.glob("2*.md"))
     if not notes:
@@ -1502,6 +1580,8 @@ def _update_existing_notes(output_dir: Path) -> int:
         if not content.startswith("---"):
             continue
 
+        fm = _parse_frontmatter(note_path) or {}
+
         # Check all known language variants for summary and translation
         has_summary = any(
             f"> **{I18N[lc]['summary_label']}:**" in content
@@ -1534,55 +1614,42 @@ def _update_existing_notes(output_dir: Path) -> int:
         if len(raw_text) < MIN_CHARS_FOR_UPDATE:
             continue
 
+        existing_tags = _parse_tags_value(fm.get("tags", ""))
         needs_summary = not has_summary and len(raw_text) >= MIN_CHARS_FOR_SUMMARY
+        needs_tags = not any(t not in STRUCTURAL_TAGS for t in existing_tags)
         needs_translation = not has_translation and is_primarily_english(raw_text)
 
-        if not needs_summary and not needs_translation:
+        if not needs_summary and not needs_tags and not needs_translation:
             continue
 
-        log.info("Updating: %s (summary=%s, translation=%s)",
-                 note_path.name, needs_summary, needs_translation)
+        log.info("Updating: %s (summary=%s, tags=%s, translation=%s)",
+                 note_path.name, needs_summary, needs_tags, needs_translation)
 
-        additions = []
-
+        summary = ""
+        tags: List[str] = []
         if needs_summary:
             summary, tags = generate_summary_and_tags(raw_text)
-            if summary:
-                additions.append(f"> **{_lang['summary_label']}:** {summary.replace(chr(10), ' ')}\n")
-                log.info("  Added summary (%d chars)", len(summary))
+        elif needs_tags:
+            tags = generate_tags(raw_text)
 
+        translation = ""
         if needs_translation:
-            tl = translate_to_chinese(raw_text)
-            if tl:
-                additions.append(f"\n---\n\n**{_lang['translation_label']}:**\n\n{tl}\n")
-                log.info("  Added translation (%d chars)", len(tl))
+            translation = translate_to_chinese(raw_text)
 
-        if additions:
-            # Insert summary after frontmatter, translation before metrics
-            lines = content.split("\n")
-            new_lines = []
-            fm_count = 0
-            summary_inserted = False
-
-            for line in lines:
-                if line.strip() == "---":
-                    fm_count += 1
-                    new_lines.append(line)
-                    if fm_count == 2 and needs_summary and additions:
-                        new_lines.append("")
-                        new_lines.append(additions[0].strip())
-                        new_lines.append("")
-                        summary_inserted = True
-                    continue
-                new_lines.append(line)
-
-            new_content = "\n".join(new_lines)
-
-            # Append translation at end (before final newline)
-            if needs_translation and len(additions) > (1 if needs_summary else 0):
-                tl_block = additions[-1]
-                new_content = new_content.rstrip() + "\n" + tl_block + "\n"
-
+        if summary or tags or translation:
+            new_content = content
+            if tags:
+                new_content, added_tags = _merge_frontmatter_tags(new_content, tags)
+                if added_tags:
+                    log.info("  Added tags: %s", added_tags)
+            if summary:
+                summary_block = f"> **{_lang['summary_label']}:** {summary.replace(chr(10), ' ')}"
+                new_content = _insert_after_frontmatter(new_content, summary_block)
+                log.info("  Added summary (%d chars)", len(summary))
+            if translation:
+                tl_block = f"---\n\n**{_lang['translation_label']}:**\n\n{translation}"
+                new_content = new_content.rstrip() + "\n\n" + tl_block + "\n"
+                log.info("  Added translation (%d chars)", len(translation))
             note_path.write_text(new_content, encoding="utf-8")
             updated += 1
 
@@ -1711,13 +1778,14 @@ def main() -> int:
     # --- Step 8: Write notes ---
     now_iso = datetime.now().astimezone().isoformat()
     written = write_note_files(new_items, output_dir, now_iso, download_media=args.download_media)
+    written_items = [item for item in new_items if item.get("notePath")]
 
     # --- Step 9: Generate MOC ---
     generate_moc(output_dir)
 
     # --- Step 10: Update state ---
     seen = state.setdefault("seen", {})
-    for item in new_items:
+    for item in written_items:
         seen[item["tweetId"]] = {
             "url": item.get("url", ""),
             "syncedAt": now_iso,
@@ -1731,6 +1799,12 @@ def main() -> int:
         "Done: fetched=%d new=%d wrote=%d",
         len(all_items), len(new_items), len(written),
     )
+    skipped = len(new_items) - len(written_items)
+    if skipped:
+        log.warning(
+            "%d new bookmark(s) were not written and will be retried on the next run",
+            skipped,
+        )
     # Always print a single-line summary to stdout (even in --quiet mode)
     # so automation/cron jobs can parse the result reliably.
     print(f"birdseed: fetched={len(all_items)} new={len(new_items)} wrote={len(written)}")
